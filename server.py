@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
 """Railway 上跑的常驻服务：每天抓一次快照，同时把页面提供出去。"""
 import http.server, json, os, socketserver, threading, time, traceback
-from datetime import date, datetime, timedelta
+from datetime import datetime, timezone
 
-os.environ.setdefault("TZ", "America/Los_Angeles")   # 按球场所在时区判断"今天"
-try:
-    time.tzset()
-except AttributeError:
-    pass
-
-import fetch_mise as fm
+import fetch_mise as fm   # 时区由 fetch_mise.TZINFO（ZoneInfo）统一负责
 
 PORT = int(os.environ.get("PORT", 8080))
 CHECK_EVERY = 300          # 每 5 分钟检查一次"当前时段抓过了吗"
@@ -17,7 +11,7 @@ STATE = {"last_ok": None, "last_error": None, "runs": 0, "started": None}
 
 
 def log(msg):
-    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
+    print(f"[{fm.now_local():%Y-%m-%d %H:%M:%S %Z}] {msg}", flush=True)
 
 
 def snapshot_if_needed():
@@ -31,7 +25,7 @@ def snapshot_if_needed():
         return False
     log(f"抓取时段 {fm.slot_id(slot)} …")
     snaps = fm.run_once(slot)
-    STATE["last_ok"] = datetime.now().isoformat(timespec="seconds")
+    STATE["last_ok"] = fm.now_local().isoformat(timespec="seconds")
     STATE["last_slot"] = fm.slot_id(slot)
     STATE["last_error"] = None
     STATE["runs"] += 1
@@ -89,11 +83,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "days": len({f[9:19] for f in snaps}),
                 "first": snaps[0][9:19] if snaps else None,
                 "latest": snaps[-1][9:-5] if snaps else None,
-                "now": datetime.now().isoformat(timespec="seconds"),
+                "now": fm.now_local().isoformat(timespec="seconds"),
+                "now_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "utc_offset": fm.now_local().strftime("%z"),
                 "current_slot": fm.slot_id(fm.current_slot()),
                 "next_run": fm.next_slot().isoformat(timespec="minutes"),
                 "run_hours": fm.RUN_HOURS,
-                "tz": os.environ.get("TZ"),
+                "tz": str(fm.TZINFO),
                 "store": fm.STORE,
                 "resources": [n for _, n in fm.RESOURCES],
             }, ensure_ascii=False, indent=1), "application/json; charset=utf-8")
@@ -115,7 +111,7 @@ class Server(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     os.makedirs(fm.DATA, exist_ok=True)
-    STATE["started"] = datetime.now().isoformat(timespec="seconds")
+    STATE["started"] = fm.now_local().isoformat(timespec="seconds")
     log(f"数据目录 {fm.STORE} · 每天 {fm.RUN_HOURS} 点抓取 · 监听 :{PORT}")
     threading.Thread(target=worker, daemon=True).start()
     Server(("0.0.0.0", PORT), Handler).serve_forever()

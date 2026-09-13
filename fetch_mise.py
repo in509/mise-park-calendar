@@ -6,6 +6,7 @@
 """
 import csv, json, os, time, urllib.request
 from datetime import date, datetime, time as dtime, timedelta
+from zoneinfo import ZoneInfo
 
 BASE = "https://anc.apm.activecommunities.com/sanjoseparksandrec"
 RESOURCES = [
@@ -21,6 +22,22 @@ CHUNK_DAYS = 40  # the API refuses ranges longer than 44 days
 RUN_HOURS = sorted({int(h) for h in
                     os.environ.get("MISE_RUN_HOURS", "11,23").split(",") if h.strip()})
 
+# 球场所在时区。**不要**依赖 TZ 环境变量 + time.tzset()：
+# Railway 的运行镜像里没有系统 tzdata，tzset() 会静默回落到 UTC，
+# 于是"今天"和 11:00/23:00 全部按 UTC 算（差 7 小时）。
+# 这里显式用 ZoneInfo，并在 requirements.txt 里装 tzdata 包自带数据库，
+# 跟基础镜像无关；夏令时切换（2026-11-01 PDT→PST）也会自动跟上。
+TZINFO = ZoneInfo(os.environ.get("MISE_TZ", "America/Los_Angeles"))
+
+
+def now_local():
+    return datetime.now(TZINFO)
+
+
+def today_local():
+    return now_local().date()
+
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 数据落盘位置。本地默认跟脚本同目录；Railway 上设 MISE_DATA=/data 指向挂载的 Volume。
 STORE = os.environ.get("MISE_DATA", HERE)
@@ -33,22 +50,23 @@ STATUS = {0: "bookable", 5: "past", 7: "too-soon", 8: "too-far"}
 
 # ---------- 时段 ----------
 
+def _slots(around):
+    """给定日期前后各一天的全部计划时刻（带时区，夏令时自动正确）。"""
+    return [datetime.combine(d, dtime(h, 0), tzinfo=TZINFO)
+            for d in (around - timedelta(days=1), around, around + timedelta(days=1))
+            for h in RUN_HOURS]
+
+
 def current_slot(now=None):
     """当下所属的抓取时段（最近一个已经到点的计划时刻）。"""
-    now = now or datetime.now()
-    cands = [datetime.combine(d, dtime(h, 0))
-             for d in (now.date(), now.date() - timedelta(days=1))
-             for h in RUN_HOURS]
-    past = [t for t in cands if t <= now]
-    return max(past) if past else min(cands)
+    now = now or now_local()
+    past = [t for t in _slots(now.date()) if t <= now]
+    return max(past) if past else min(_slots(now.date()))
 
 
 def next_slot(now=None):
-    now = now or datetime.now()
-    cands = [datetime.combine(d, dtime(h, 0))
-             for d in (now.date(), now.date() + timedelta(days=1))
-             for h in RUN_HOURS]
-    return min(t for t in cands if t > now)
+    now = now or now_local()
+    return min(t for t in _slots(now.date()) if t > now)
 
 
 def slot_id(slot):
@@ -103,12 +121,12 @@ def to_min(t):
 
 def take_snapshot(slot=None):
     slot = slot or current_slot()
-    today = date.today()
+    today = today_local()
     snap = {
         "snapshot_id": slot_id(slot),
         "snapshot_date": today.isoformat(),
         "slot": slot.isoformat(timespec="minutes"),
-        "snapshot_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "snapshot_at": now_local().isoformat(timespec="seconds"),
         "range": [today.isoformat(), (today + timedelta(days=DAYS_AHEAD)).isoformat()],
         "resources": {},
     }
@@ -195,12 +213,22 @@ def free_minutes(free):
 
 
 def nice(sid):
-    """2026-09-12-1100 → 09-12 11:00"""
+    """2026-09-12-1100 → 09-12 11:00（场次标签）"""
     return f"{sid[5:10]} {sid[11:13]}:{sid[13:15]}" if len(sid) >= 15 else sid
 
 
+def at(snap):
+    """实际抓取时刻 → 09-13 00:07。
+
+    跟场次标签可能差很远：容器重启后会补抓错过的场次，
+    那时"场次 09-12 23:00"实际是 09-13 00:07 跑的。页面要显示后者。
+    """
+    ts = snap.get("snapshot_at") or ""
+    return ts[5:16].replace("T", " ") if len(ts) >= 16 else nice(snap["snapshot_id"])
+
+
 def build_view(snaps):
-    today = date.today()
+    today = today_local()
     latest = snaps[-1]
     prev = snaps[-2] if len(snaps) > 1 else None
 
@@ -233,10 +261,13 @@ def build_view(snaps):
         "today": today.isoformat(),
         "daysAhead": DAYS_AHEAD,
         "runCount": len(snaps),
-        "dayCount": len({s["snapshot_date"] for s in snaps}),
-        "firstSnapshot": snaps[0]["snapshot_date"],
-        "latestLabel": nice(latest["snapshot_id"]),
-        "prevLabel": nice(prev["snapshot_id"]) if prev else None,
+        # 按场次日期算，跟文件名一致（snapshot_date 是抓取当天，跨零点补抓时会对不上）
+        "dayCount": len({s["snapshot_id"][:10] for s in snaps}),
+        "firstSnapshot": snaps[0]["snapshot_id"][:10],
+        "latestAt": at(latest),
+        "prevAt": at(prev) if prev else None,
+        "latestSlot": nice(latest["snapshot_id"]),
+        "prevSlot": nice(prev["snapshot_id"]) if prev else None,
         "runHours": RUN_HOURS,
         "resources": [{"id": str(r), "name": n} for r, n in RESOURCES],
         "latest": {rid: rd["days"] for rid, rd in latest["resources"].items()},

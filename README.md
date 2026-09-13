@@ -18,7 +18,7 @@ railway init                  # 建项目
 railway up                    # 首次部署
 railway link                  # 把服务绑到当前目录（后面几条要用）
 railway volume add --mount-path /data          # 持久化快照
-railway variables --set MISE_DATA=/data --set TZ=America/Los_Angeles
+railway variables --set MISE_DATA=/data
 railway domain                # 拿公网地址
 ```
 
@@ -43,15 +43,26 @@ git add -A && git commit -m "..." && git push   # 推完自动构建部署
 
 也可以在 https://railway.com/new 用网页操作：Deploy from GitHub repo →
 服务 Settings 里加 Volume（挂载路径 `/data`）→ Variables 加 `MISE_DATA=/data`
-和 `TZ=America/Los_Angeles` → Networking 里 Generate Domain。
+→ Networking 里 Generate Domain。
 
 ### 环境变量
 | 变量 | 作用 |
 |---|---|
 | `MISE_DATA` | 数据落盘目录。Railway 上设成 Volume 的挂载路径 `/data` |
-| `TZ` | 判断时段用的时区，设 `America/Los_Angeles`（**不设会按 UTC，抓取时间全错**）|
+| `MISE_TZ` | 时区，默认 `America/Los_Angeles`。一般不用设 |
 | `MISE_RUN_HOURS` | 每天抓取的整点，默认 `11,23`。想加一次就写 `8,14,20` |
 | `PORT` | Railway 自动注入，不用管 |
+
+### 时区那个坑（踩过一次）
+**不要**用 `TZ` 环境变量 + `time.tzset()` 来定时区。Railway 的运行镜像里没有系统
+tzdata，`tzset()` 会**静默回落到 UTC** —— 而 `/status` 里的 `tz` 字段只是回显环境变量，
+看起来一切正常，实际上"今天"和 11:00/23:00 全部按 UTC 算，差 7 小时。
+
+现在改成显式 `zoneinfo.ZoneInfo`，并在 `requirements.txt` 里装 `tzdata` 包自带数据库，
+跟基础镜像无关。夏令时（2026-11-01 PDT→PST）也会自动跟上，11:00 永远是当地 11:00。
+
+`/status` 现在同时报 `now`、`now_utc` 和 `utc_offset`，一眼就能看出有没有再犯：
+`utc_offset` 该是 `-0700`（夏令时）或 `-0800`（冬令时），**不该是 `+0000`**。
 
 抓取是**幂等**的：快照文件按「时段」命名（`snapshot-2026-09-12-1100.json`），
 当前时段已有文件就跳过。所以重新部署、重启都不会重复记账；
@@ -87,6 +98,25 @@ bash ~/Documents/MiseParkCalendar/setup_github.command # 建仓库 + 开 Pages�
 | `server.py` | Railway 上的常驻服务：调度器 + HTTP server |
 | `railway.json` | Railway 部署配置 |
 | `run.log` | 本机定时任务输出，出问题看这个 |
+
+## 页面怎么看
+
+**红色 = 已被占用**，浅色 = 还空着。画幅默认是场地开放时间 8:00–22:00，
+个别日期空档超出这个范围时会自动撑开（比如 10/31 空到 23:00）。
+
+注意接口给的是**空闲**时段，红色的占用是用「开放时间减去空闲」算出来的。
+所以「占用」严格说是「不可预订」—— 可能是别人订走了，也可能是场地维护或封场。
+
+**虚线框**的日期表示网站已经不显示了（进入 4 天封锁期，或已经过去），
+框里是它**最后一次可见时**的快照，角标注明取自哪天。这是整个项目存在的理由：
+网站规定至少提前 4 天才能订，4 天内的日期服务器直接返回空数据，事后无法补查，
+只能靠每天存快照把它留住。
+
+**最后更新**显示的是**实际抓取时刻**，不是场次标签。两者可能差很远 ——
+容器重启后会补抓错过的场次，「23:00 那一场」可能实际是次日 00:07 跑的。
+
+**最近变化**比较相邻两次快照，所以跨度约 12 小时，能看出这半天里
+哪些时段被订走（红）、哪些被退掉（绿）。
 
 ## 监控的场地
 | id | 名称 |

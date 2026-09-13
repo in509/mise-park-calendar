@@ -61,10 +61,6 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
 .freed{color:var(--freeink)}
 .empty{color:var(--muted);padding:28px;text-align:center;background:var(--card);
  border:1px dashed var(--line);border-radius:10px}
-.prose{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;font-size:14px}
-.prose h3{font-size:14px;margin:18px 0 6px}.prose h3:first-child{margin-top:0}
-.prose code{background:var(--free);padding:1px 5px;border-radius:4px;font-size:12px}
-.prose ul{padding-left:20px;margin:6px 0}
 @media(max-width:560px){.row,.ruler{grid-template-columns:46px 1fr}.wrap{padding:16px 12px 48px}}
 </style></head><body>
 <div class="wrap">
@@ -77,7 +73,6 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
 <div class="tabs" role="tablist">
   <button class="tab" data-v="cal" aria-selected="true">日历</button>
   <button class="tab" data-v="chg" aria-selected="false">最近变化</button>
-  <button class="tab" data-v="doc" aria-selected="false">说明</button>
 </div>
 <div id="v-cal">
   <div class="controls">
@@ -101,7 +96,6 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
   <div id="days"></div>
 </div>
 <div id="v-chg" hidden></div>
-<div id="v-doc" hidden><div class="prose" id="doc"></div></div>
 </div>
 <script>
 const D = /*__DATA__*/null;
@@ -117,7 +111,7 @@ const rName=id=>(D.resources.find(r=>r.id===id)||{}).name||id;
 
 document.getElementById('sub').textContent =
   `已累积 ${D.runCount} 次快照 / ${D.dayCount} 天（自 ${D.firstSnapshot}）· `
-  + `最后更新 ${D.latestLabel} · 每天 ${D.runHours.map(x=>x+':00').join(' 和 ')} 各抓一次`;
+  + `最后更新 ${D.latestAt} · 每天 ${D.runHours.map(x=>x+':00').join(' 和 ')} 各抓一次`;
 
 const sel=document.getElementById('res');
 D.resources.forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=r.name;sel.appendChild(o)});
@@ -212,9 +206,9 @@ function renderCal(){
 
 function renderChg(){
   const el=document.getElementById('v-chg');
-  if(!D.prevLabel){el.innerHTML='<div class="empty">还只有一份快照，明天再跑一次就能看出变化了。</div>';return}
-  if(!D.changes.length){el.innerHTML=`<div class="empty">跟上一次（${D.prevLabel}）相比没有任何变化。</div>`;return}
-  let h=`<div class="legend">对比 ${D.prevLabel} → ${D.latestLabel}</div>`;
+  if(!D.prevAt){el.innerHTML='<div class="empty">还只有一份快照，明天再跑一次就能看出变化了。</div>';return}
+  if(!D.changes.length){el.innerHTML=`<div class="empty">跟上一次（${D.prevAt}）相比没有任何变化。</div>`;return}
+  let h=`<div class="legend">对比 ${D.prevAt} → ${D.latestAt}</div>`;
   const by={};
   D.changes.forEach(c=>{(by[c.date]=by[c.date]||[]).push(c)});
   Object.keys(by).sort().forEach(date=>{
@@ -228,33 +222,10 @@ function renderChg(){
   el.innerHTML=h;
 }
 
-document.getElementById('doc').innerHTML=`
-<h3>怎么看</h3>
-<p><strong style="color:var(--occink)">红色 = 已被占用</strong>，浅色底 = 还空着。画幅默认是场地开放时间 8:00–22:00，
-个别日期空档超出这个范围时会自动撑开。</p>
-<p>注意：接口给的是<strong>空闲</strong>时段，红色的占用是用「开放时间减去空闲」算出来的。
-所以「占用」严格说是「不可预订」—— 可能是别人订走了，也可能是场地维护或封场。</p>
-<h3>更新频率</h3><p>每天 11:00 和 23:00 各抓一次。「最近变化」比较的是相邻两次快照，所以它反映的是最近约 12 小时内的变动。</p><h3>这个页面在解决什么问题</h3>
-<p>预订网站规定「至少提前 4 天」，服务器对今天起 4 天内的日期直接返回空数据 —— 不是前端藏起来，是查不到。
-所以只能每天抓一次快照。存够之后，封锁期内的日期就能显示<strong>它最后一次可见时的样子</strong>（虚线框那些）。</p>
-<h3>数据在哪</h3>
-<ul>
-<li><code>data/snapshot-YYYY-MM-DD.json</code> — 每天一份原始快照，只增不改</li>
-<li><code>history.csv</code> — 所有快照摊平成表格，可以直接拖进 Excel</li>
-<li><code>index.html</code> — 就是这个页面，每次抓取后重新生成</li>
-</ul>
-<h3>状态码</h3>
-<ul><li><code>0</code> 可订（times 里是空闲时段）</li><li><code>7</code> 未满 4 天，被封锁</li>
-<li><code>5</code> 已过期</li><li><code>8</code> 超过 365 天</li></ul>
-<h3>改抓取频率</h3>
-<p>编辑 <code>~/Library/LaunchAgents/com.yi.mise-calendar.plist</code> 里的 <code>StartCalendarInterval</code>，
-然后 <code>launchctl unload</code> 再 <code>load</code> 一次。</p>
-<h3>改场地或天数</h3>
-<p>编辑 <code>fetch_mise.py</code> 顶部的 <code>RESOURCES</code> 和 <code>DAYS_AHEAD</code>。</p>`;
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected', x===b));
-  ['cal','chg','doc'].forEach(v=>document.getElementById('v-'+v).hidden = v!==b.dataset.v);
+  ['cal','chg'].forEach(v=>document.getElementById('v-'+v).hidden = v!==b.dataset.v);
 });
 ['weekend','hasfree','mindur','res','past'].forEach(id=>document.getElementById(id).onchange=renderCal);
 renderCal(); renderChg();
