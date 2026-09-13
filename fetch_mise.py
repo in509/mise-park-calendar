@@ -1,30 +1,65 @@
 #!/usr/bin/env python3
 """Mise Park (San Jose PRNS) availability snapshotter.
 
-Runs once a day, records what the reservation site currently shows for the
-next N days, and regenerates index.html so you can see history that the
-site itself throws away (dates inside the 4-day booking blackout).
+每个「时段」抓一次（默认每天 11:00 和 23:00），记录预订网站当下显示的占用情况，
+并重新生成 index.html —— 补上网站因为 4 天封锁规则而不再显示的那部分历史。
 """
 import csv, json, os, time, urllib.request
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 
 BASE = "https://anc.apm.activecommunities.com/sanjoseparksandrec"
 RESOURCES = [
-    (257, "Soccer Field North (Half)"),
-    (648, "Soccer Field South (Half)"),
-    (258, "Softball Field (Full Field)"),
+    (257, "North"),   # Mise Soccer Field North (Half)
+    (648, "South"),   # Mise Soccer Field South (Half)
+    (258, "Full"),    # Mise Softball Field (Full Field)
 ]
+NAMES = {str(r): n for r, n in RESOURCES}
 DAYS_AHEAD = 60
 CHUNK_DAYS = 40  # the API refuses ranges longer than 44 days
-OPEN_START_MIN, OPEN_END_MIN = 8 * 60, 22 * 60
+
+# 每天抓取的时刻（本地时间的整点）。可用 MISE_RUN_HOURS=11,23 覆盖。
+RUN_HOURS = sorted({int(h) for h in
+                    os.environ.get("MISE_RUN_HOURS", "11,23").split(",") if h.strip()})
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, "data")
-HIST = os.path.join(HERE, "history.csv")
-HTML = os.path.join(HERE, "index.html")
+# 数据落盘位置。本地默认跟脚本同目录；Railway 上设 MISE_DATA=/data 指向挂载的 Volume。
+STORE = os.environ.get("MISE_DATA", HERE)
+DATA = os.path.join(STORE, "data")
+HIST = os.path.join(STORE, "history.csv")
+HTML = os.path.join(STORE, "index.html")
 
 STATUS = {0: "bookable", 5: "past", 7: "too-soon", 8: "too-far"}
 
+
+# ---------- 时段 ----------
+
+def current_slot(now=None):
+    """当下所属的抓取时段（最近一个已经到点的计划时刻）。"""
+    now = now or datetime.now()
+    cands = [datetime.combine(d, dtime(h, 0))
+             for d in (now.date(), now.date() - timedelta(days=1))
+             for h in RUN_HOURS]
+    past = [t for t in cands if t <= now]
+    return max(past) if past else min(cands)
+
+
+def next_slot(now=None):
+    now = now or datetime.now()
+    cands = [datetime.combine(d, dtime(h, 0))
+             for d in (now.date(), now.date() + timedelta(days=1))
+             for h in RUN_HOURS]
+    return min(t for t in cands if t > now)
+
+
+def slot_id(slot):
+    return slot.strftime("%Y-%m-%d-%H%M")
+
+
+def slot_path(slot):
+    return os.path.join(DATA, f"snapshot-{slot_id(slot)}.json")
+
+
+# ---------- 抓取 ----------
 
 def fetch(rid, start, end):
     url = (f"{BASE}/rest/reservation/resource/availability/daily/{rid}"
@@ -66,14 +101,15 @@ def to_min(t):
     return h * 60 + m
 
 
-def take_snapshot():
+def take_snapshot(slot=None):
+    slot = slot or current_slot()
     today = date.today()
-    start = today.isoformat()
-    end = (today + timedelta(days=DAYS_AHEAD)).isoformat()
     snap = {
-        "snapshot_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "snapshot_id": slot_id(slot),
         "snapshot_date": today.isoformat(),
-        "range": [start, end],
+        "slot": slot.isoformat(timespec="minutes"),
+        "snapshot_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "range": [today.isoformat(), (today + timedelta(days=DAYS_AHEAD)).isoformat()],
         "resources": {},
     }
     for rid, name in RESOURCES:
@@ -89,50 +125,57 @@ def take_snapshot():
     return snap
 
 
+# ---------- 存储 ----------
+
 def save_snapshot(snap):
     os.makedirs(DATA, exist_ok=True)
-    path = os.path.join(DATA, f"snapshot-{snap['snapshot_date']}.json")
+    path = os.path.join(DATA, f"snapshot-{snap['snapshot_id']}.json")
     with open(path, "w") as f:
         json.dump(snap, f, indent=1)
     return path
 
 
-def update_history(snap):
-    rows = {}
-    if os.path.exists(HIST):
-        with open(HIST, newline="") as f:
-            for r in csv.DictReader(f):
-                rows[(r["snapshot_date"], r["resource_id"], r["target_date"])] = r
-    for rid, rdata in snap["resources"].items():
-        for tdate, d in rdata["days"].items():
-            rows[(snap["snapshot_date"], rid, tdate)] = {
-                "snapshot_date": snap["snapshot_date"],
-                "resource_id": rid,
-                "resource_name": rdata["name"],
-                "target_date": tdate,
-                "status": STATUS.get(d["status"], str(d["status"])),
-                "free_slots": "|".join(f"{a}-{b}" for a, b in d["free"]),
-                "free_minutes": str(sum(to_min(b) - to_min(a) for a, b in d["free"])),
-            }
-    cols = ["snapshot_date", "resource_id", "resource_name", "target_date",
-            "status", "free_slots", "free_minutes"]
-    with open(HIST, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for k in sorted(rows):
-            w.writerow(rows[k])
-
-
 def load_snapshots():
+    """按时段先后返回全部快照。"""
     if not os.path.isdir(DATA):
         return []
     out = []
     for fn in sorted(os.listdir(DATA)):
-        if fn.startswith("snapshot-") and fn.endswith(".json"):
-            with open(os.path.join(DATA, fn)) as f:
-                out.append(json.load(f))
-    return out
+        if not (fn.startswith("snapshot-") and fn.endswith(".json")):
+            continue
+        with open(os.path.join(DATA, fn)) as f:
+            s = json.load(f)
+        # 兼容早期「一天一份」的文件
+        s.setdefault("snapshot_id", fn[9:-5])
+        s.setdefault("snapshot_date", s["snapshot_id"][:10])
+        out.append(s)
+    return sorted(out, key=lambda s: s["snapshot_id"])
 
+
+def write_history(snaps):
+    """每次都从全部快照重建 —— 永远跟 data/ 一致，也免去格式迁移。"""
+    cols = ["snapshot_id", "snapshot_date", "resource_id", "resource_name",
+            "target_date", "status", "free_slots", "free_minutes"]
+    with open(HIST, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        for s in snaps:
+            for rid, rdata in s["resources"].items():
+                for tdate in sorted(rdata["days"]):
+                    d = rdata["days"][tdate]
+                    w.writerow({
+                        "snapshot_id": s["snapshot_id"],
+                        "snapshot_date": s["snapshot_date"],
+                        "resource_id": rid,
+                        "resource_name": NAMES.get(rid, rdata["name"]),
+                        "target_date": tdate,
+                        "status": STATUS.get(d["status"], str(d["status"])),
+                        "free_slots": "|".join(f"{a}-{b}" for a, b in d["free"]),
+                        "free_minutes": sum(to_min(b) - to_min(a) for a, b in d["free"]),
+                    })
+
+
+# ---------- 视图 ----------
 
 def merge(minutes):
     out = []
@@ -149,6 +192,11 @@ def free_minutes(free):
     for a, b in free:
         s.update(range(to_min(a), to_min(b)))
     return s
+
+
+def nice(sid):
+    """2026-09-12-1100 → 09-12 11:00"""
+    return f"{sid[5:10]} {sid[11:13]}:{sid[13:15]}" if len(sid) >= 15 else sid
 
 
 def build_view(snaps):
@@ -184,9 +232,12 @@ def build_view(snaps):
         "generated": latest["snapshot_at"],
         "today": today.isoformat(),
         "daysAhead": DAYS_AHEAD,
-        "snapshotCount": len(snaps),
+        "runCount": len(snaps),
+        "dayCount": len({s["snapshot_date"] for s in snaps}),
         "firstSnapshot": snaps[0]["snapshot_date"],
-        "prevSnapshot": prev["snapshot_date"] if prev else None,
+        "latestLabel": nice(latest["snapshot_id"]),
+        "prevLabel": nice(prev["snapshot_id"]) if prev else None,
+        "runHours": RUN_HOURS,
         "resources": [{"id": str(r), "name": n} for r, n in RESOURCES],
         "latest": {rid: rd["days"] for rid, rd in latest["resources"].items()},
         "lastVisible": last_visible,
@@ -200,10 +251,16 @@ def build_html(view):
         f.write(tpl.replace("/*__DATA__*/null", json.dumps(view, separators=(",", ":"))))
 
 
-if __name__ == "__main__":
-    snap = take_snapshot()
-    print("saved", save_snapshot(snap))
-    update_history(snap)
+def run_once(slot=None):
+    """抓一次 + 重建 CSV + 重新生成页面。"""
+    snap = take_snapshot(slot)
+    save_snapshot(snap)
     snaps = load_snapshots()
+    write_history(snaps)
     build_html(build_view(snaps))
-    print(f"{len(snaps)} snapshot(s); wrote {HTML}")
+    return snaps
+
+
+if __name__ == "__main__":
+    snaps = run_once()
+    print(f"{len(snaps)} 份快照（{len({s['snapshot_date'] for s in snaps})} 天）→ {HTML}")

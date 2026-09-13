@@ -42,12 +42,12 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
 .dmeta{color:var(--muted);font-size:12px}
 .badge{font-size:11px;padding:1px 7px;border-radius:20px;background:var(--warnbg);
  color:var(--warn);white-space:nowrap}
-.ruler{display:grid;grid-template-columns:92px 1fr;gap:10px;margin-bottom:3px}
+.ruler{display:grid;grid-template-columns:52px 1fr;gap:10px;margin-bottom:3px}
 .rl{position:relative;height:13px}
 .rl span{position:absolute;font-size:10px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
 .rl span.first{transform:none}.rl span.last{transform:translateX(-100%)}
-.row{display:grid;grid-template-columns:92px 1fr;gap:10px;align-items:center;margin:5px 0}
-.rname{font-size:12px;color:var(--muted);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row{display:grid;grid-template-columns:52px 1fr;gap:10px;align-items:center;margin:5px 0}
+.rname{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
 .bar{position:relative;height:22px;background:var(--free);border-radius:5px;overflow:hidden}
 .seg{position:absolute;top:0;bottom:0;background:var(--occ)}
 .bar .tick{position:absolute;top:0;bottom:0;width:1px;background:var(--bg);opacity:.5}
@@ -65,24 +65,24 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
 .prose h3{font-size:14px;margin:18px 0 6px}.prose h3:first-child{margin-top:0}
 .prose code{background:var(--free);padding:1px 5px;border-radius:4px;font-size:12px}
 .prose ul{padding-left:20px;margin:6px 0}
-@media(max-width:560px){.row,.ruler{grid-template-columns:60px 1fr}.wrap{padding:16px 12px 48px}}
+@media(max-width:560px){.row,.ruler{grid-template-columns:46px 1fr}.wrap{padding:16px 12px 48px}}
 </style></head><body>
 <div class="wrap">
 <h1>Mise Park 场地占用记录</h1>
 <div class="sub" id="sub"></div>
-<div class="intro">San Jose · Mise Park 足球 / 垒球场的占用情况，每天自动记录一次。
-<b>红色 = 已被占用</b>，浅色 = 还空着。
+<div class="intro">San Jose · Mise Park 足球 / 垒球场的占用情况。
+<b>红色 = 已被占用</b>，浅色 = 还空着。<b>North</b> / <b>South</b> 是两个半场，<b>Full</b> 是整场（订了整场两个半场就都不可用）。
 官网规定<b>至少提前 4 天</b>才能订，4 天内的日期它直接不显示 —— 那几天这里显示的是历史快照。
 <a href="https://anc.apm.activecommunities.com/sanjoseparksandrec/reservation/landing/search/detail/257?locale=en-US" target="_blank" rel="noopener">去官网预订 →</a></div>
 <div class="tabs" role="tablist">
   <button class="tab" data-v="cal" aria-selected="true">日历</button>
-  <button class="tab" data-v="chg" aria-selected="false">昨日变化</button>
+  <button class="tab" data-v="chg" aria-selected="false">最近变化</button>
   <button class="tab" data-v="doc" aria-selected="false">说明</button>
 </div>
 <div id="v-cal">
   <div class="controls">
-    <label><input type="checkbox" id="weekend"> 只看周末</label>
-    <label><input type="checkbox" id="hasfree" checked> 只看有空档的</label>
+    <label><input type="checkbox" id="weekend" checked> 只看周末</label>
+    <label><input type="checkbox" id="hasfree"> 只看有空档的</label>
     <label>最少空档 <select id="mindur">
       <option value="0">不限</option><option value="30">30 分钟</option>
       <option value="60" selected>1 小时</option><option value="90">1.5 小时</option>
@@ -116,7 +116,8 @@ const shortLbl=s=>{const d=dObj(s);return (d.getMonth()+1)+'/'+d.getDate()};
 const rName=id=>(D.resources.find(r=>r.id===id)||{}).name||id;
 
 document.getElementById('sub').textContent =
-  `已累积 ${D.snapshotCount} 天快照（自 ${D.firstSnapshot}）· 最后更新 ${D.generated.slice(0,16).replace('T',' ')}`;
+  `已累积 ${D.runCount} 次快照 / ${D.dayCount} 天（自 ${D.firstSnapshot}）· `
+  + `最后更新 ${D.latestLabel} · 每天 ${D.runHours.map(x=>x+':00').join(' 和 ')} 各抓一次`;
 
 const sel=document.getElementById('res');
 D.resources.forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=r.name;sel.appendChild(o)});
@@ -211,9 +212,9 @@ function renderCal(){
 
 function renderChg(){
   const el=document.getElementById('v-chg');
-  if(!D.prevSnapshot){el.innerHTML='<div class="empty">还只有一份快照，明天再跑一次就能看出变化了。</div>';return}
-  if(!D.changes.length){el.innerHTML=`<div class="empty">跟 ${D.prevSnapshot} 相比没有任何变化。</div>`;return}
-  let h=`<div class="legend">对比 ${D.prevSnapshot} → ${D.today}</div>`;
+  if(!D.prevLabel){el.innerHTML='<div class="empty">还只有一份快照，明天再跑一次就能看出变化了。</div>';return}
+  if(!D.changes.length){el.innerHTML=`<div class="empty">跟上一次（${D.prevLabel}）相比没有任何变化。</div>`;return}
+  let h=`<div class="legend">对比 ${D.prevLabel} → ${D.latestLabel}</div>`;
   const by={};
   D.changes.forEach(c=>{(by[c.date]=by[c.date]||[]).push(c)});
   Object.keys(by).sort().forEach(date=>{
@@ -233,7 +234,7 @@ document.getElementById('doc').innerHTML=`
 个别日期空档超出这个范围时会自动撑开。</p>
 <p>注意：接口给的是<strong>空闲</strong>时段，红色的占用是用「开放时间减去空闲」算出来的。
 所以「占用」严格说是「不可预订」—— 可能是别人订走了，也可能是场地维护或封场。</p>
-<h3>这个页面在解决什么问题</h3>
+<h3>更新频率</h3><p>每天 11:00 和 23:00 各抓一次。「最近变化」比较的是相邻两次快照，所以它反映的是最近约 12 小时内的变动。</p><h3>这个页面在解决什么问题</h3>
 <p>预订网站规定「至少提前 4 天」，服务器对今天起 4 天内的日期直接返回空数据 —— 不是前端藏起来，是查不到。
 所以只能每天抓一次快照。存够之后，封锁期内的日期就能显示<strong>它最后一次可见时的样子</strong>（虚线框那些）。</p>
 <h3>数据在哪</h3>

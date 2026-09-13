@@ -1,5 +1,6 @@
 #!/bin/bash
-# 双击：建仓库、开 GitHub Pages、首次发布。只需要跑一次。
+# 双击：把这个目录建成 GitHub 仓库并推上去。之后在 Railway 里接上它，
+# 每次 git push 就会自动部署。只需要跑一次。
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"; cd "$DIR"
 REPO="mise-park-calendar"
@@ -14,30 +15,19 @@ if ! gh auth status >/dev/null 2>&1; then
   read -n1 -p "按任意键关闭…"; exit 1
 fi
 
-cat > .gitignore <<'G'
-run.log
-__pycache__/
-.DS_Store
-G
-
 [ -d .git ] || git init -q -b main
 git add -A
 git diff --cached --quiet || git commit -q -m "Mise Park 场地占用记录"
 
 if git remote get-url origin >/dev/null 2>&1; then
   git push -q -u origin main
+  echo "已推送到 $(git remote get-url origin)"
 else
-  gh repo create "$REPO" --public --source=. --remote=origin --push
+  gh repo create "$REPO" --private --source=. --remote=origin --push
+  echo "已创建 $(gh api user -q .login)/$REPO 并推送"
 fi
 
-gh api -X POST "repos/{owner}/$REPO/pages" \
-  -f "source[branch]=main" -f "source[path]=/" >/dev/null 2>&1 \
-  && echo "已开启 GitHub Pages" || echo "Pages 已经是开着的"
-
-USER=$(gh api user -q .login)
 echo
-echo "────────────────────────────────────────"
-echo "  https://$USER.github.io/$REPO/"
-echo "────────────────────────────────────────"
-echo "首次部署要等 1–2 分钟。以后每天抓完自动推送。"
+echo "下一步：Railway → 你的服务 → Settings → Source → Connect Repo，选这个仓库和 main 分支。"
+echo "接上之后，以后改完代码只要：  git add -A && git commit -m '...' && git push"
 read -n1 -p "按任意键关闭…"
