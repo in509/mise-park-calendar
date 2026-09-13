@@ -109,9 +109,27 @@ class Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
+def rebuild_page():
+    """用当前模板重新生成页面（不联网）。
+
+    index.html 是产物，存在 Volume 里；改了模板或视图逻辑后如果不重建，
+    就得等下一次抓取才能看见 —— 最长 12 小时。所以每次启动都重建一次。
+    """
+    snaps = fm.load_snapshots()
+    if not snaps:
+        return
+    fm.write_history(snaps)
+    fm.build_html(fm.build_view(snaps))
+    log(f"已用当前模板重新生成页面（{len(snaps)} 份快照）")
+
+
 if __name__ == "__main__":
     os.makedirs(fm.DATA, exist_ok=True)
     STATE["started"] = fm.now_local().isoformat(timespec="seconds")
+    try:
+        rebuild_page()
+    except Exception as e:
+        log(f"启动时重建页面失败: {type(e).__name__}: {e}")
     log(f"数据目录 {fm.STORE} · 每天 {fm.RUN_HOURS} 点抓取 · 监听 :{PORT}")
     threading.Thread(target=worker, daemon=True).start()
     Server(("0.0.0.0", PORT), Handler).serve_forever()
