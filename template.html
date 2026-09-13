@@ -16,8 +16,11 @@
 body{margin:0;background:var(--bg);color:var(--ink);
  font:15px/1.55 ui-sans-serif,-apple-system,"PingFang SC","Helvetica Neue",sans-serif}
 .wrap{max-width:1000px;margin:0 auto;padding:24px 16px 64px}
-h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
-.sub{color:var(--muted);font-size:13px;margin-bottom:10px}
+h1{font-size:22px;margin:0 0 10px;letter-spacing:-.01em}
+.stats{color:var(--muted);font-size:13px;line-height:1.7;margin-bottom:14px;
+ padding:10px 13px;background:var(--card);border:1px solid var(--line);border-radius:9px;
+ font-variant-numeric:tabular-nums}
+.stats b{color:var(--ink);font-weight:600}
 .intro{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px;
  padding:10px 13px;background:var(--card);border:1px solid var(--line);border-radius:9px}
 .intro a{color:var(--accent)}
@@ -65,7 +68,6 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
 </style></head><body>
 <div class="wrap">
 <h1>Mise Park 场地占用记录</h1>
-<div class="sub" id="sub"></div>
 <div class="intro">San Jose · Mise Park 足球 / 垒球场的占用情况。
 <b>红色 = 已被占用</b>，浅色 = 还空着。<b>North</b> / <b>South</b> 是两个半场，<b>Full</b> 是整场。
 官网规定<b>至少提前 4 天</b>才能订，4 天内的日期它直接不显示，这个网站记录了历史数据便于查看。
@@ -108,10 +110,6 @@ const dObj=s=>new Date(s+'T12:00:00');
 const label=s=>{const d=dObj(s);return (d.getMonth()+1)+'月'+d.getDate()+'日 '+WD[d.getDay()]};
 const shortLbl=s=>{const d=dObj(s);return (d.getMonth()+1)+'/'+d.getDate()};
 const rName=id=>(D.resources.find(r=>r.id===id)||{}).name||id;
-
-document.getElementById('sub').textContent =
-  `已累积 ${D.runCount} 次快照 / ${D.dayCount} 天（自 ${D.firstSnapshot}）· `
-  + `最后更新 ${D.latestAt} · 每天 ${D.runHours.map(x=>x+':00').join(' 和 ')} 各抓一次`;
 
 const sel=document.getElementById('res');
 D.resources.forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=r.name;sel.appendChild(o)});
@@ -204,11 +202,17 @@ function renderCal(){
     '<div class="empty">没有符合条件的日期，放宽一下筛选试试。</div>';
 }
 
+function stats(){
+  return `<div class="stats">已累积 <b>${D.runCount}</b> 次快照 / <b>${D.dayCount}</b> 天`
+    + `（自 ${D.firstSnapshot}）· 最后更新 <b>${D.latestAt}</b>`
+    + ` · 每天 ${D.runHours.map(x=>x+':00').join(' 和 ')} 各抓一次</div>`;
+}
+
 function renderChg(){
   const el=document.getElementById('v-chg');
-  if(!D.prevAt){el.innerHTML='<div class="empty">还只有一份快照，明天再跑一次就能看出变化了。</div>';return}
-  if(!D.changes.length){el.innerHTML=`<div class="empty">跟上一次（${D.prevAt}）相比没有任何变化。</div>`;return}
-  let h=`<div class="legend">对比 ${D.prevAt} → ${D.latestAt}</div>`;
+  if(!D.prevAt){el.innerHTML=stats()+'<div class="empty">还只有一份快照，下次抓取之后就能看出变化了。</div>';return}
+  if(!D.changes.length){el.innerHTML=stats()+`<div class="empty">跟上一次（${D.prevAt}）相比没有任何变化。</div>`;return}
+  let h=stats()+`<div class="legend">对比 ${D.prevAt} → ${D.latestAt}</div>`;
   const by={};
   D.changes.forEach(c=>{(by[c.date]=by[c.date]||[]).push(c)});
   Object.keys(by).sort().forEach(date=>{
