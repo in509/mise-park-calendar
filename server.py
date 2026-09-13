@@ -77,6 +77,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/status":
             snaps = sorted(f for f in os.listdir(fm.DATA)) if os.path.isdir(fm.DATA) else []
+            # 落盘的事实，重启不会丢 —— 下面 STATE 里的 runs/last_ok 只是本进程的计数，
+            # 容器一重启就归零，分不清"没跑过"和"跑过但之后重启了"。
+            disk = {}
+            if snaps:
+                try:
+                    with open(os.path.join(fm.DATA, snaps[-1])) as f:
+                        last = json.load(f)
+                    disk = {"latest_captured_at": last.get("snapshot_at"),
+                            "latest_slot": last.get("snapshot_id", snaps[-1][9:-5])}
+                except Exception as e:
+                    disk = {"latest_captured_at": f"读取失败: {type(e).__name__}"}
             return self._send(json.dumps({
                 **STATE,
                 "snapshots": len(snaps),
@@ -86,7 +97,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "now": fm.now_local().isoformat(timespec="seconds"),
                 "now_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "utc_offset": fm.now_local().strftime("%z"),
+                **disk,
                 "current_slot": fm.slot_id(fm.current_slot()),
+                "current_slot_done": os.path.exists(fm.slot_path(fm.current_slot())),
                 "next_run": fm.next_slot().isoformat(timespec="minutes"),
                 "run_hours": fm.RUN_HOURS,
                 "tz": str(fm.TZINFO),
