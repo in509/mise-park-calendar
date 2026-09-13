@@ -24,6 +24,7 @@ h1{font-size:22px;margin:0 0 10px;letter-spacing:-.01em}
 .intro{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px;
  padding:10px 13px;background:var(--card);border:1px solid var(--line);border-radius:9px}
 .intro a{color:var(--accent)}
+.asof{margin-top:7px;font-size:12px;opacity:.7;font-variant-numeric:tabular-nums}
 .intro b{color:var(--occink)}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px}
 .tab{padding:8px 14px;border:0;background:none;color:var(--muted);cursor:pointer;
@@ -71,7 +72,8 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
 <div class="intro">San Jose · Mise Park 足球 / 垒球场的占用情况。
 <b>红色 = 已被占用</b>，浅色 = 还空着。<b>North</b> / <b>South</b> 是两个半场，<b>Full</b> 是整场。
 官网规定<b>至少提前 4 天</b>才能订，4 天内的日期它直接不显示，这个网站记录了历史数据便于查看。
-<a href="https://anc.apm.activecommunities.com/sanjoseparksandrec/reservation/landing/search/detail/257?locale=en-US" target="_blank" rel="noopener">去官网预订 →</a></div>
+<a href="https://anc.apm.activecommunities.com/sanjoseparksandrec/reservation/landing/search/detail/257?locale=en-US" target="_blank" rel="noopener">去官网预订 →</a>
+<div class="asof" id="asof"></div></div>
 <div class="tabs" role="tablist">
   <button class="tab" data-v="cal" aria-selected="true">日历</button>
   <button class="tab" data-v="chg" aria-selected="false">最近变化</button>
@@ -110,6 +112,8 @@ const dObj=s=>new Date(s+'T12:00:00');
 const label=s=>{const d=dObj(s);return (d.getMonth()+1)+'月'+d.getDate()+'日 '+WD[d.getDay()]};
 const shortLbl=s=>{const d=dObj(s);return (d.getMonth()+1)+'/'+d.getDate()};
 const rName=id=>(D.resources.find(r=>r.id===id)||{}).name||id;
+
+document.getElementById('asof').textContent = `数据截至 ${D.latestAt}`;
 
 const sel=document.getElementById('res');
 D.resources.forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=r.name;sel.appendChild(o)});
