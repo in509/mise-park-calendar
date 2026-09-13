@@ -16,16 +16,17 @@
 body{margin:0;background:var(--bg);color:var(--ink);
  font:15px/1.55 ui-sans-serif,-apple-system,"PingFang SC","Helvetica Neue",sans-serif}
 .wrap{max-width:1000px;margin:0 auto;padding:24px 16px 64px}
-h1{font-size:22px;margin:0 0 10px;letter-spacing:-.01em}
-.stats{color:var(--muted);font-size:13px;line-height:1.7;margin-bottom:14px;
- padding:10px 13px;background:var(--card);border:1px solid var(--line);border-radius:9px;
- font-variant-numeric:tabular-nums}
-.stats b{color:var(--ink);font-weight:600}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+h1{font-size:22px;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.lang{flex:none;font:inherit;font-size:12px;padding:4px 11px;cursor:pointer;
+ color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:20px}
+.lang:hover{color:var(--ink);border-color:var(--muted)}
+.lang:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .intro{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px;
  padding:10px 13px;background:var(--card);border:1px solid var(--line);border-radius:9px}
 .intro a{color:var(--accent)}
-.asof{margin-top:7px;font-size:12px;opacity:.7;font-variant-numeric:tabular-nums}
 .intro b{color:var(--occink)}
+.asof{margin-top:7px;font-size:12px;opacity:.7;font-variant-numeric:tabular-nums}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px}
 .tab{padding:8px 14px;border:0;background:none;color:var(--muted);cursor:pointer;
  font:inherit;font-size:14px;border-bottom:2px solid transparent;margin-bottom:-1px}
@@ -35,6 +36,10 @@ h1{font-size:22px;margin:0 0 10px;letter-spacing:-.01em}
 .controls label{display:flex;align-items:center;gap:6px;color:var(--muted);cursor:pointer}
 select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
  border-radius:6px;background:var(--card);color:var(--ink)}
+.stats{color:var(--muted);font-size:13px;line-height:1.7;margin-bottom:14px;
+ padding:10px 13px;background:var(--card);border:1px solid var(--line);border-radius:9px;
+ font-variant-numeric:tabular-nums}
+.stats b{color:var(--ink);font-weight:600}
 .legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-bottom:14px;flex-wrap:wrap}
 .sw{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
 .day{background:var(--card);border:1px solid var(--line);border-radius:10px;
@@ -68,173 +73,251 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
 @media(max-width:560px){.row,.ruler{grid-template-columns:46px 1fr}.wrap{padding:16px 12px 48px}}
 </style></head><body>
 <div class="wrap">
-<h1>Mise Park 场地占用记录</h1>
-<div class="intro">San Jose · Mise Park 足球 / 垒球场的占用情况。
-<b>红色 = 已被占用</b>，浅色 = 还空着。<b>North</b> / <b>South</b> 是两个半场，<b>Full</b> 是整场。
-官网规定<b>至少提前 4 天</b>才能订，4 天内的日期它直接不显示，这个网站记录了历史数据便于查看。
-<a href="https://anc.apm.activecommunities.com/sanjoseparksandrec/reservation/landing/search/detail/257?locale=en-US" target="_blank" rel="noopener">去官网预订 →</a>
-<div class="asof" id="asof"></div></div>
+<div class="top">
+  <h1 id="h1"></h1>
+  <button class="lang" id="lang" type="button"></button>
+</div>
+<div class="intro" id="intro"></div>
 <div class="tabs" role="tablist">
-  <button class="tab" data-v="cal" aria-selected="true">日历</button>
-  <button class="tab" data-v="chg" aria-selected="false">最近变化</button>
+  <button class="tab" data-v="cal" aria-selected="true"></button>
+  <button class="tab" data-v="chg" aria-selected="false"></button>
 </div>
 <div id="v-cal">
   <div class="controls">
-    <label><input type="checkbox" id="weekend" checked> 只看周末</label>
-    <label><input type="checkbox" id="hasfree"> 只看有空档的</label>
-    <label>最少空档 <select id="mindur">
-      <option value="0">不限</option><option value="30">30 分钟</option>
-      <option value="60" selected>1 小时</option><option value="90">1.5 小时</option>
-      <option value="120">2 小时</option></select></label>
-    <label>场地 <select id="res"><option value="">全部</option></select></label>
-    <label>范围 <select id="past">
-      <option value="0" selected>今天起</option>
-      <option value="14">含过去 14 天</option>
-      <option value="30">含过去 30 天</option></select></label>
+    <label><input type="checkbox" id="weekend" checked> <span data-t="cWeekend"></span></label>
+    <label><input type="checkbox" id="hasfree"> <span data-t="cHasFree"></span></label>
+    <label><span data-t="cMinDur"></span> <select id="mindur">
+      <option value="0" data-t="optAny"></option><option value="30" data-t="opt30"></option>
+      <option value="60" selected data-t="opt60"></option><option value="90" data-t="opt90"></option>
+      <option value="120" data-t="opt120"></option></select></label>
+    <label><span data-t="cRes"></span> <select id="res"></select></label>
+    <label><span data-t="cPast"></span> <select id="past">
+      <option value="0" selected data-t="optFrom"></option>
+      <option value="14" data-t="optP14"></option>
+      <option value="30" data-t="optP30"></option></select></label>
   </div>
-  <div class="legend">
-    <span><span class="sw" style="background:var(--occ)"></span>已被占用</span>
-    <span><span class="sw" style="background:var(--free);border:1px solid var(--line)"></span>空闲</span>
-    <span>虚线框 = 网站已不再显示，取自历史快照</span>
-  </div>
+  <div class="legend" id="legend"></div>
   <div id="days"></div>
 </div>
 <div id="v-chg" hidden></div>
 </div>
 <script>
 const D = /*__DATA__*/null;
-const DAY_LO=480, DAY_HI=1320;               // 8:00–22:00 的默认画幅
-const WD=['周日','周一','周二','周三','周四','周五','周六'];
-const m=t=>+t.slice(0,2)*60 + +t.slice(3,5);
-const t2=n=>String(n/60|0).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
-const fmt=n=>{const h=n/60|0,x=n%60;return ((h?h+'小时':'')+(x?x+'分':''))||'0'};
-const dObj=s=>new Date(s+'T12:00:00');
-const label=s=>{const d=dObj(s);return (d.getMonth()+1)+'月'+d.getDate()+'日 '+WD[d.getDay()]};
-const shortLbl=s=>{const d=dObj(s);return (d.getMonth()+1)+'/'+d.getDate()};
-const rName=id=>(D.resources.find(r=>r.id===id)||{}).name||id;
+const BOOK_URL = "https://anc.apm.activecommunities.com/sanjoseparksandrec/reservation/landing/search/detail/257?locale=en-US";
+const MON_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-document.getElementById('asof').textContent = `数据截至 ${D.latestAt}`;
+const I18N = {
+  zh: {
+    title: 'Mise Park 场地占用记录',
+    intro: `San Jose · Mise Park 足球 / 垒球场的占用情况。
+      <b>红色 = 已被占用</b>，浅色 = 还空着。<b>North</b> / <b>South</b> 是两个半场，<b>Full</b> 是整场。
+      官网规定<b>至少提前 4 天</b>才能订，4 天内的日期它直接不显示，这个网站记录了历史数据便于查看。
+      <a href="${BOOK_URL}" target="_blank" rel="noopener">去官网预订 →</a>`,
+    asof: t => `数据截至 ${t}`,
+    langBtn: 'EN', tabCal: '日历', tabChg: '最近变化',
+    cWeekend: '只看周末', cHasFree: '只看有空档的', cMinDur: '最少空档', cRes: '场地', cPast: '范围',
+    optAny: '不限', opt30: '30 分钟', opt60: '1 小时', opt90: '1.5 小时', opt120: '2 小时',
+    optAll: '全部', optFrom: '今天起', optP14: '含过去 14 天', optP30: '含过去 30 天',
+    lgOcc: '已被占用', lgFree: '空闲', lgStale: '虚线框 = 网站已不再显示，取自历史快照',
+    occ: '占用', totalOf: t => `共 ${t}`, noOcc: '全天无人占用',
+    freeLbl: '空', noFree: n => `没有 ≥${n} 分钟的整段空档`,
+    blackout: '封锁期', past: '已过去', snapOf: d => `${d} 的快照`,
+    empty: '没有符合条件的日期，放宽一下筛选试试。',
+    stats: d => `已累积 <b>${d.runCount}</b> 次快照 / <b>${d.dayCount}</b> 天（自 ${d.firstSnapshot}）`
+      + ` · 最后更新 <b>${d.latestAt}</b> · 每天 ${d.runHours.map(x => x + ':00').join(' 和 ')} 各抓一次`,
+    chgFirst: '还只有一份快照，下次抓取之后就能看出变化了。',
+    chgNone: p => `跟上一次（${p}）相比没有任何变化。`,
+    chgCmp: (p, l) => `对比 ${p} → ${l}`,
+    chgBooked: (n, s) => `${n} 新增占用 ${s}`,
+    chgFreed: (n, s) => `${n} 释放出来 ${s}`,
+    wd: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
+    date: d => `${d.getMonth() + 1}月${d.getDate()}日 周${'日一二三四五六'[d.getDay()]}`,
+    dur: (h, m) => (h ? h + '小时' : '') + (m ? m + '分' : '') || '0',
+  },
+  en: {
+    title: 'Mise Park Field Availability',
+    intro: `San Jose · When the fields at Mise Park are taken.
+      <b>Red = booked</b>, light = open. <b>North</b> / <b>South</b> are the two half fields,
+      <b>Full</b> is the whole field. The city requires booking <b>at least 4 days ahead</b>, and dates
+      inside that window vanish from their site — this page keeps the history so you can still see them.
+      <a href="${BOOK_URL}" target="_blank" rel="noopener">Book on the official site →</a>`,
+    asof: t => `Data as of ${t}`,
+    langBtn: '中文', tabCal: 'Calendar', tabChg: 'Recent changes',
+    cWeekend: 'Weekends only', cHasFree: 'Only days with openings', cMinDur: 'Min opening',
+    cRes: 'Field', cPast: 'Range',
+    optAny: 'Any', opt30: '30 min', opt60: '1 hour', opt90: '1.5 hours', opt120: '2 hours',
+    optAll: 'All', optFrom: 'From today', optP14: 'Past 14 days', optP30: 'Past 30 days',
+    lgOcc: 'Booked', lgFree: 'Open', lgStale: 'Dashed = no longer shown by the city, from a saved snapshot',
+    occ: 'Booked', totalOf: t => `${t} total`, noOcc: 'Open all day',
+    freeLbl: 'Open', noFree: n => `No single opening of ${n}+ min`,
+    blackout: 'Within 4-day window', past: 'Past', snapOf: d => `snapshot from ${d}`,
+    empty: 'No days match these filters. Try loosening them.',
+    stats: d => `<b>${d.runCount}</b> snapshot${d.runCount === 1 ? '' : 's'}`
+      + ` over <b>${d.dayCount}</b> day${d.dayCount === 1 ? '' : 's'} (since ${d.firstSnapshot})`
+      + ` · Last updated <b>${d.latestAt}</b> · Captured at ${d.runHours.map(x => x + ':00').join(' and ')} daily`,
+    chgFirst: 'Only one snapshot so far — changes will show after the next run.',
+    chgNone: p => `Nothing changed since the last run (${p}).`,
+    chgCmp: (p, l) => `${p} → ${l}`,
+    chgBooked: (n, s) => `${n} newly booked ${s}`,
+    chgFreed: (n, s) => `${n} freed up ${s}`,
+    wd: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    date: d => `${MON_EN[d.getMonth()]} ${d.getDate()} (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]})`,
+    dur: (h, m) => ((h ? h + 'h ' : '') + (m ? m + 'm' : '')).trim() || '0',
+  },
+};
 
-const sel=document.getElementById('res');
-D.resources.forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=r.name;sel.appendChild(o)});
+let LANG = 'zh';
+try { const v = localStorage.getItem('mise-lang'); if (I18N[v]) LANG = v; } catch (e) {}
+const T = () => I18N[LANG];
+
+const DAY_LO = 480, DAY_HI = 1320;               // 8:00–22:00 的默认画幅
+const m = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+const t2 = n => String(n / 60 | 0).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+const fmt = n => T().dur(n / 60 | 0, n % 60);
+const dObj = s => new Date(s + 'T12:00:00');
+const label = s => T().date(dObj(s));
+const shortLbl = s => { const d = dObj(s); return (d.getMonth() + 1) + '/' + d.getDate() };
+const rName = id => (D.resources.find(r => r.id === id) || {}).name || id;
 
 // 一天的画幅：默认 8:00–22:00，若某天空档超出这个范围就撑开
 function spanOf(freeLists){
-  let lo=DAY_LO, hi=DAY_HI;
-  freeLists.forEach(f=>f.forEach(([a,b])=>{lo=Math.min(lo,m(a));hi=Math.max(hi,m(b))}));
-  return [lo,hi];
+  let lo = DAY_LO, hi = DAY_HI;
+  freeLists.forEach(f => f.forEach(([a, b]) => { lo = Math.min(lo, m(a)); hi = Math.max(hi, m(b)) }));
+  return [lo, hi];
 }
 // 占用 = 画幅减去空档
-function busyOf(free,lo,hi){
-  const out=[]; let cur=lo;
-  free.slice().sort((x,y)=>m(x[0])-m(y[0])).forEach(([a,b])=>{
-    if(m(a)>cur) out.push([cur,m(a)]);
-    cur=Math.max(cur,m(b));
+function busyOf(free, lo, hi){
+  const out = []; let cur = lo;
+  free.slice().sort((x, y) => m(x[0]) - m(y[0])).forEach(([a, b]) => {
+    if (m(a) > cur) out.push([cur, m(a)]);
+    cur = Math.max(cur, m(b));
   });
-  if(cur<hi) out.push([cur,hi]);
+  if (cur < hi) out.push([cur, hi]);
   return out;
 }
 function dayList(){
-  const back=+document.getElementById('past').value;
-  const out=[], t=dObj(D.today);
-  for(let i=-back;i<=D.daysAhead;i++){
-    const d=new Date(t); d.setDate(d.getDate()+i);
-    out.push(d.toISOString().slice(0,10));
+  const back = +document.getElementById('past').value;
+  const out = [], t = dObj(D.today);
+  for (let i = -back; i <= D.daysAhead; i++){
+    const d = new Date(t); d.setDate(d.getDate() + i);
+    out.push(d.toISOString().slice(0, 10));
   }
   return out;
 }
-function cellFor(rid,date){
-  const live=(D.latest[rid]||{})[date];
-  if(live && live.status===0) return {free:live.free, stale:null};
-  const lv=(D.lastVisible[rid]||{})[date];
-  if(lv) return {free:lv.free, stale:lv.snap};
+function cellFor(rid, date){
+  const live = (D.latest[rid] || {})[date];
+  if (live && live.status === 0) return { free: live.free, stale: null };
+  const lv = (D.lastVisible[rid] || {})[date];
+  if (lv) return { free: lv.free, stale: lv.snap };
   return null;
 }
-function ruler(lo,hi){
-  const ls=[]; for(let t=lo;t<hi;t+=240) ls.push(t); ls.push(hi);
-  const sp=hi-lo;
-  return `<div class="ruler"><div></div><div class="rl">`+ls.map((t,i)=>
-    `<span class="${i===0?'first':i===ls.length-1?'last':''}" style="left:${(t-lo)/sp*100}%">${t2(t)}</span>`
-  ).join('')+`</div></div>`;
+function ruler(lo, hi){
+  const ls = []; for (let t = lo; t < hi; t += 240) ls.push(t); ls.push(hi);
+  const sp = hi - lo;
+  return `<div class="ruler"><div></div><div class="rl">` + ls.map((t, i) =>
+    `<span class="${i === 0 ? 'first' : i === ls.length - 1 ? 'last' : ''}" style="left:${(t - lo) / sp * 100}%">${t2(t)}</span>`
+  ).join('') + `</div></div>`;
 }
-function bar(free,lo,hi){
-  const sp=hi-lo;
-  let h='<div class="bar">';
-  for(let t=lo+120;t<hi;t+=120) h+=`<span class="tick" style="left:${(t-lo)/sp*100}%"></span>`;
-  busyOf(free,lo,hi).forEach(([a,b])=>{
-    h+=`<span class="seg" style="left:${(a-lo)/sp*100}%;width:${(b-a)/sp*100}%"></span>`;
+function bar(free, lo, hi){
+  const sp = hi - lo;
+  let h = '<div class="bar">';
+  for (let t = lo + 120; t < hi; t += 120) h += `<span class="tick" style="left:${(t - lo) / sp * 100}%"></span>`;
+  busyOf(free, lo, hi).forEach(([a, b]) => {
+    h += `<span class="seg" style="left:${(a - lo) / sp * 100}%;width:${(b - a) / sp * 100}%"></span>`;
   });
-  return h+'</div>';
+  return h + '</div>';
 }
 
 function renderCal(){
-  const weekend=document.getElementById('weekend').checked;
-  const hasfree=document.getElementById('hasfree').checked;
-  const mind=+document.getElementById('mindur').value;
-  const only=sel.value;
-  const rs=D.resources.filter(r=>!only||r.id===only);
-  let html='', shown=0;
-  for(const date of dayList()){
-    const wd=dObj(date).getDay();
-    if(weekend && wd!==0 && wd!==6) continue;
-    const cells=rs.map(r=>[r,cellFor(r.id,date)]).filter(x=>x[1]);
-    if(!cells.length) continue;
-    if(hasfree && !cells.some(([,c])=>c.free.some(([a,b])=>m(b)-m(a)>=mind))) continue;
+  const weekend = document.getElementById('weekend').checked;
+  const hasfree = document.getElementById('hasfree').checked;
+  const mind = +document.getElementById('mindur').value;
+  const only = document.getElementById('res').value;
+  const rs = D.resources.filter(r => !only || r.id === only);
+  let html = '', shown = 0;
+  for (const date of dayList()){
+    const wd = dObj(date).getDay();
+    if (weekend && wd !== 0 && wd !== 6) continue;
+    const cells = rs.map(r => [r, cellFor(r.id, date)]).filter(x => x[1]);
+    if (!cells.length) continue;
+    if (hasfree && !cells.some(([, c]) => c.free.some(([a, b]) => m(b) - m(a) >= mind))) continue;
     shown++;
-    const [lo,hi]=spanOf(cells.map(([,c])=>c.free));
-    const stale=cells.every(([,c])=>c.stale);
-    html+=`<div class="day${stale?' stale':''}"><div class="dhead">
-      <span class="dtitle${wd===0||wd===6?' we':''}">${label(date)}</span>`;
-    if(stale) html+=`<span class="badge">${date<D.today?'已过去':'封锁期'} · ${shortLbl(cells[0][1].stale)} 的快照</span>`;
-    html+=`<span class="dmeta">${date}</span></div>`+ruler(lo,hi);
-    for(const [r,c] of cells){
-      const busy=busyOf(c.free,lo,hi);
-      const good=c.free.filter(([a,b])=>m(b)-m(a)>=mind);
-      html+=`<div class="row"><div class="rname" title="${r.name}">${r.name}</div>${bar(c.free,lo,hi)}</div>
+    const [lo, hi] = spanOf(cells.map(([, c]) => c.free));
+    const stale = cells.every(([, c]) => c.stale);
+    html += `<div class="day${stale ? ' stale' : ''}"><div class="dhead">
+      <span class="dtitle${wd === 0 || wd === 6 ? ' we' : ''}">${label(date)}</span>`;
+    if (stale) html += `<span class="badge">${date < D.today ? T().past : T().blackout} · ${T().snapOf(shortLbl(cells[0][1].stale))}</span>`;
+    html += `<span class="dmeta">${date}</span></div>` + ruler(lo, hi);
+    for (const [r, c] of cells){
+      const busy = busyOf(c.free, lo, hi);
+      const good = c.free.filter(([a, b]) => m(b) - m(a) >= mind);
+      html += `<div class="row"><div class="rname" title="${r.name}">${r.name}</div>${bar(c.free, lo, hi)}</div>
         <div class="lines">`;
-      html+= busy.length
-        ? `<div class="l-occ">占用 ${busy.map(([a,b])=>t2(a)+'–'+t2(b)).join('、')} <span class="q">共 ${fmt(busy.reduce((s,[a,b])=>s+b-a,0))}</span></div>`
-        : `<div class="l-free">全天无人占用</div>`;
-      html+= good.length
-        ? `<div class="l-free">空 ${good.map(([a,b])=>a+'–'+b).join('、')}</div>`
-        : (busy.length?`<div class="l-free">没有 ≥${mind} 分钟的整段空档</div>`:'');
-      html+=`</div>`;
+      html += busy.length
+        ? `<div class="l-occ">${T().occ} ${busy.map(([a, b]) => t2(a) + '–' + t2(b)).join('、')} <span class="q">${T().totalOf(fmt(busy.reduce((s, [a, b]) => s + b - a, 0)))}</span></div>`
+        : `<div class="l-free">${T().noOcc}</div>`;
+      html += good.length
+        ? `<div class="l-free">${T().freeLbl} ${good.map(([a, b]) => a + '–' + b).join('、')}</div>`
+        : (busy.length ? `<div class="l-free">${T().noFree(mind)}</div>` : '');
+      html += `</div>`;
     }
-    html+='</div>';
+    html += '</div>';
   }
-  document.getElementById('days').innerHTML = shown? html :
-    '<div class="empty">没有符合条件的日期，放宽一下筛选试试。</div>';
-}
-
-function stats(){
-  return `<div class="stats">已累积 <b>${D.runCount}</b> 次快照 / <b>${D.dayCount}</b> 天`
-    + `（自 ${D.firstSnapshot}）· 最后更新 <b>${D.latestAt}</b>`
-    + ` · 每天 ${D.runHours.map(x=>x+':00').join(' 和 ')} 各抓一次</div>`;
+  document.getElementById('days').innerHTML = shown ? html : `<div class="empty">${T().empty}</div>`;
 }
 
 function renderChg(){
-  const el=document.getElementById('v-chg');
-  if(!D.prevAt){el.innerHTML=stats()+'<div class="empty">还只有一份快照，下次抓取之后就能看出变化了。</div>';return}
-  if(!D.changes.length){el.innerHTML=stats()+`<div class="empty">跟上一次（${D.prevAt}）相比没有任何变化。</div>`;return}
-  let h=stats()+`<div class="legend">对比 ${D.prevAt} → ${D.latestAt}</div>`;
-  const by={};
-  D.changes.forEach(c=>{(by[c.date]=by[c.date]||[]).push(c)});
-  Object.keys(by).sort().forEach(date=>{
-    h+=`<div class="chg"><div class="dhead"><span class="dtitle">${label(date)}</span></div>`;
-    by[date].forEach(c=>{
-      if(c.booked.length) h+=`<div class="chgline booked">● ${rName(c.rid)} 新增占用 ${c.booked.map(([a,b])=>a+'–'+b).join('、')}</div>`;
-      if(c.freed.length) h+=`<div class="chgline freed">○ ${rName(c.rid)} 释放出来 ${c.freed.map(([a,b])=>a+'–'+b).join('、')}</div>`;
+  const el = document.getElementById('v-chg');
+  const head = `<div class="stats">${T().stats(D)}</div>`;
+  if (!D.prevAt) { el.innerHTML = head + `<div class="empty">${T().chgFirst}</div>`; return }
+  if (!D.changes.length) { el.innerHTML = head + `<div class="empty">${T().chgNone(D.prevAt)}</div>`; return }
+  let h = head + `<div class="legend">${T().chgCmp(D.prevAt, D.latestAt)}</div>`;
+  const by = {};
+  D.changes.forEach(c => { (by[c.date] = by[c.date] || []).push(c) });
+  Object.keys(by).sort().forEach(date => {
+    h += `<div class="chg"><div class="dhead"><span class="dtitle">${label(date)}</span></div>`;
+    by[date].forEach(c => {
+      const fm2 = arr => arr.map(([a, b]) => a + '–' + b).join('、');
+      if (c.booked.length) h += `<div class="chgline booked">● ${T().chgBooked(rName(c.rid), fm2(c.booked))}</div>`;
+      if (c.freed.length) h += `<div class="chgline freed">○ ${T().chgFreed(rName(c.rid), fm2(c.freed))}</div>`;
     });
-    h+='</div>';
+    h += '</div>';
   });
-  el.innerHTML=h;
+  el.innerHTML = h;
 }
 
+function applyLang(){
+  const t = T();
+  document.documentElement.lang = LANG;
+  document.title = t.title;
+  document.getElementById('h1').textContent = t.title;
+  document.getElementById('lang').textContent = t.langBtn;
+  document.getElementById('intro').innerHTML = t.intro + `<div class="asof">${t.asof(D.latestAt)}</div>`;
+  document.querySelectorAll('.tab').forEach(b => {
+    b.textContent = b.dataset.v === 'cal' ? t.tabCal : t.tabChg;
+  });
+  document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t[el.dataset.t] });
+  document.getElementById('legend').innerHTML =
+    `<span><span class="sw" style="background:var(--occ)"></span>${t.lgOcc}</span>`
+    + `<span><span class="sw" style="background:var(--free);border:1px solid var(--line)"></span>${t.lgFree}</span>`
+    + `<span>${t.lgStale}</span>`;
+  const sel = document.getElementById('res'), keep = sel.value;
+  sel.innerHTML = `<option value="">${t.optAll}</option>`
+    + D.resources.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+  sel.value = keep;
+  renderCal(); renderChg();
+}
 
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected', x===b));
-  ['cal','chg'].forEach(v=>document.getElementById('v-'+v).hidden = v!==b.dataset.v);
+document.getElementById('lang').onclick = () => {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  try { localStorage.setItem('mise-lang', LANG) } catch (e) {}
+  applyLang();
+};
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === b));
+  ['cal', 'chg'].forEach(v => document.getElementById('v-' + v).hidden = v !== b.dataset.v);
 });
-['weekend','hasfree','mindur','res','past'].forEach(id=>document.getElementById(id).onchange=renderCal);
-renderCal(); renderChg();
+['weekend', 'hasfree', 'mindur', 'res', 'past'].forEach(id =>
+  document.getElementById(id).onchange = renderCal);
+applyLang();
 </script></body></html>
