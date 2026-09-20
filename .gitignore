@@ -1,6 +1,8 @@
 # 运行时生成物 —— 线上这些住在 Railway 的 Volume（/data），不进仓库
 data/
 history.csv
+changes.csv
+changes_state.json
 index.html
 run.log
 

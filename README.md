@@ -90,6 +90,8 @@ bash ~/Documents/MiseParkCalendar/setup_github.command # 建仓库 + 开 Pages�
 |---|---|
 | `data/snapshot-YYYY-MM-DD-HHMM.json` | 每个时段一份原始快照，只增不改 |
 | `history.csv` | 所有快照的平表，每次抓完从 `data/` 全量重建，可直接用 Excel 打开 |
+| `changes.csv` | 变更日志，**只追加**。列：noticed_at, from_slot, to_slot, resource_id, resource_name, target_date, kind(booked/freed), start, end |
+| `changes_state.json` | 变更日志算到哪一份快照了 |
 | `index.html` | 网页，每次抓取后重新生成；GitHub Pages 就服务这个 |
 | `template.html` | 页面模板，改样式改这里 |
 | `fetch_mise.py` | 抓取 + 生成页面 |
@@ -115,8 +117,14 @@ bash ~/Documents/MiseParkCalendar/setup_github.command # 建仓库 + 开 Pages�
 **最后更新**显示的是**实际抓取时刻**，不是场次标签。两者可能差很远 ——
 容器重启后会补抓错过的场次，「23:00 那一场」可能实际是次日 00:07 跑的。
 
-**最近变化**比较相邻两次快照，所以跨度约 12 小时，能看出这半天里
-哪些时段被订走（红）、哪些被退掉（绿）。
+**最近变化**是一份持续累积的日志，不只是最近一次的对比。每次抓取都会跟上一份快照
+做 diff，有变化就追加进 `changes.csv`，页面按「第几次抓取发现的」倒序展示，
+红色是被订走、绿色是被退掉。页面只渲染最近 60 次事件（最多 800 条），
+完整记录点页面上的链接下载，或直接访问 `/changes.csv`。
+
+这是唯一能回答「**谁在什么时候订走了这个时段**」的数据 —— 快照只记录状态，
+变化必须在发生的当下捕捉，事后从快照重算虽然可以，但代价随历史增长。
+所以日志是**增量追加**的：每次只 diff 新出现的那一对，用 `changes_state.json` 记进度。
 
 ## 监控的场地
 | id | 名称 |

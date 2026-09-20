@@ -65,7 +65,16 @@ select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);
 .l-free{color:var(--muted)}
 .q{font-weight:400;opacity:.75}
 .chg{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px}
-.chgline{font-size:13px;margin:3px 0;font-variant-numeric:tabular-nums}
+.chgline{font-size:13px;margin:3px 0 3px 12px;font-variant-numeric:tabular-nums}
+.evhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+ padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--line)}
+.evtime{font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
+.evday{margin:9px 0}
+.evday:first-of-type{margin-top:0}
+.evdate{font-size:12px;font-weight:600;color:var(--muted)}
+.logbar{display:flex;gap:16px;align-items:baseline;font-size:12px;color:var(--muted);
+ margin-bottom:12px;flex-wrap:wrap}
+.logbar a{color:var(--accent)}
 .booked{color:var(--occink);font-weight:600}
 .freed{color:var(--freeink)}
 .empty{color:var(--muted);padding:28px;text-align:center;background:var(--card);
@@ -126,8 +135,11 @@ const I18N = {
     stats: d => `已累积 <b>${d.runCount}</b> 次快照 / <b>${d.dayCount}</b> 天（自 ${d.firstSnapshot}）`
       + ` · 最后更新 <b>${d.latestAt}</b> · 每天 ${d.runHours.map(x => x + ':00').join(' 和 ')} 各抓一次`,
     chgFirst: '还只有一份快照，下次抓取之后就能看出变化了。',
-    chgNone: p => `跟上一次（${p}）相比没有任何变化。`,
-    chgCmp: (p, l) => `对比 ${p} → ${l}`,
+    chgNoneEver: '到目前为止还没有记录到任何变化。',
+    chgNoticed: t => `${t} 发现`,
+    chgTotal: n => `累计记录 ${n} 条变化`,
+    chgCsv: '下载完整记录 (changes.csv)',
+    chgMore: '更早的变化见完整记录',
     chgBooked: (n, s) => `${n} 新增占用 ${s}`,
     chgFreed: (n, s) => `${n} 释放出来 ${s}`,
     wd: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
@@ -156,8 +168,11 @@ const I18N = {
       + ` over <b>${d.dayCount}</b> day${d.dayCount === 1 ? '' : 's'} (since ${d.firstSnapshot})`
       + ` · Last updated <b>${d.latestAt}</b> · Captured at ${d.runHours.map(x => x + ':00').join(' and ')} daily`,
     chgFirst: 'Only one snapshot so far — changes will show after the next run.',
-    chgNone: p => `Nothing changed since the last run (${p}).`,
-    chgCmp: (p, l) => `${p} → ${l}`,
+    chgNoneEver: 'No changes recorded yet.',
+    chgNoticed: t => `Noticed ${t}`,
+    chgTotal: n => `${n} change${n === 1 ? '' : 's'} recorded so far`,
+    chgCsv: 'Download full log (changes.csv)',
+    chgMore: 'Older changes are in the full log',
     chgBooked: (n, s) => `${n} newly booked ${s}`,
     chgFreed: (n, s) => `${n} freed up ${s}`,
     wd: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
@@ -269,17 +284,25 @@ function renderCal(){
 function renderChg(){
   const el = document.getElementById('v-chg');
   const head = `<div class="stats">${T().stats(D)}</div>`;
-  if (!D.prevAt) { el.innerHTML = head + `<div class="empty">${T().chgFirst}</div>`; return }
-  if (!D.changes.length) { el.innerHTML = head + `<div class="empty">${T().chgNone(D.prevAt)}</div>`; return }
-  let h = head + `<div class="legend">${T().chgCmp(D.prevAt, D.latestAt)}</div>`;
-  const by = {};
-  D.changes.forEach(c => { (by[c.date] = by[c.date] || []).push(c) });
-  Object.keys(by).sort().forEach(date => {
-    h += `<div class="chg"><div class="dhead"><span class="dtitle">${label(date)}</span></div>`;
-    by[date].forEach(c => {
-      const fm2 = arr => arr.map(([a, b]) => a + '–' + b).join('、');
-      if (c.booked.length) h += `<div class="chgline booked">● ${T().chgBooked(rName(c.rid), fm2(c.booked))}</div>`;
-      if (c.freed.length) h += `<div class="chgline freed">○ ${T().chgFreed(rName(c.rid), fm2(c.freed))}</div>`;
+  if (!D.changeLog.length){
+    el.innerHTML = head + `<div class="empty">${D.prevAt ? T().chgNoneEver : T().chgFirst}</div>`;
+    return;
+  }
+  let h = head + `<div class="logbar"><span>${T().chgTotal(D.changeTotal)}</span>`
+    + `<a href="changes.csv" download>${T().chgCsv}</a></div>`;
+  const iv = a => a.map(([x, y]) => x + '–' + y).join('、');
+  D.changeLog.forEach(ev => {
+    h += `<div class="chg"><div class="evhead"><span class="evtime">${T().chgNoticed(ev.at)}</span>`
+      + `<span class="dmeta">${ev.from} → ${ev.to}</span></div>`;
+    const by = {};
+    ev.items.forEach(i => { (by[i.date] = by[i.date] || []).push(i) });
+    Object.keys(by).sort().forEach(date => {
+      h += `<div class="evday"><div class="evdate">${label(date)}</div>`;
+      by[date].forEach(c => {
+        if (c.booked.length) h += `<div class="chgline booked">● ${T().chgBooked(rName(c.rid), iv(c.booked))}</div>`;
+        if (c.freed.length) h += `<div class="chgline freed">○ ${T().chgFreed(rName(c.rid), iv(c.freed))}</div>`;
+      });
+      h += '</div>';
     });
     h += '</div>';
   });

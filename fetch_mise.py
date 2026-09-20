@@ -43,6 +43,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STORE = os.environ.get("MISE_DATA", HERE)
 DATA = os.path.join(STORE, "data")
 HIST = os.path.join(STORE, "history.csv")
+CHANGES = os.path.join(STORE, "changes.csv")
+CHANGES_STATE = os.path.join(STORE, "changes_state.json")
 HTML = os.path.join(STORE, "index.html")
 
 STATUS = {0: "bookable", 5: "past", 7: "too-soon", 8: "too-far"}
@@ -227,6 +229,101 @@ def at(snap):
     return ts[5:16].replace("T", " ") if len(ts) >= 16 else nice(snap["snapshot_id"])
 
 
+# ---------- 变更日志 ----------
+
+CHANGE_COLS = ["noticed_at", "from_slot", "to_slot", "resource_id", "resource_name",
+               "target_date", "kind", "start", "end"]
+
+
+def diff_snaps(prev, cur):
+    """两份相邻快照之间，每个场地每个日期的占用变化。"""
+    rows = []
+    for rid, rdata in cur["resources"].items():
+        pdays = prev["resources"].get(rid, {}).get("days", {})
+        for tdate in sorted(rdata["days"]):
+            d, p = rdata["days"][tdate], pdays.get(tdate)
+            # 两边都得是"可订"状态才有可比性；进出封锁期不算预订变化
+            if not p or d["status"] != 0 or p["status"] != 0:
+                continue
+            if d["free"] == p["free"]:
+                continue                      # 绝大多数日期在这里短路，很快
+            now_m, was_m = free_minutes(d["free"]), free_minutes(p["free"])
+            for kind, ivs in (("booked", merge(was_m - now_m)),
+                              ("freed", merge(now_m - was_m))):
+                for a, b in ivs:
+                    rows.append({
+                        "noticed_at": cur.get("snapshot_at", ""),
+                        "from_slot": prev["snapshot_id"],
+                        "to_slot": cur["snapshot_id"],
+                        "resource_id": rid,
+                        "resource_name": NAMES.get(rid, rdata["name"]),
+                        "target_date": tdate,
+                        "kind": kind, "start": a, "end": b,
+                    })
+    return rows
+
+
+def update_changes(snaps):
+    """把新出现的相邻快照对的变化追加进 changes.csv。
+
+    只算没算过的对，所以每次抓取只做一次 diff，不会随历史变长而变慢。
+    用单独的 state 文件记进度 —— 某一对"没有任何变化"时不会写出任何行，
+    光看 CSV 无法区分"算过但没变化"和"还没算"。
+    """
+    last_done = None
+    if os.path.exists(CHANGES) and os.path.exists(CHANGES_STATE):
+        try:
+            last_done = json.load(open(CHANGES_STATE)).get("last_processed")
+        except Exception:
+            last_done = None
+
+    pairs = list(zip(snaps, snaps[1:]))
+    if last_done:
+        pairs = [(a, b) for a, b in pairs if b["snapshot_id"] > last_done]
+
+    new_rows = []
+    for prev, cur in pairs:
+        new_rows += diff_snaps(prev, cur)
+
+    fresh = not (os.path.exists(CHANGES) and last_done)
+    with open(CHANGES, "w" if fresh else "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=CHANGE_COLS)
+        if fresh:
+            w.writeheader()
+        for r in new_rows:
+            w.writerow(r)
+    if len(snaps) > 1:
+        json.dump({"last_processed": snaps[-1]["snapshot_id"]}, open(CHANGES_STATE, "w"))
+    return len(new_rows)
+
+
+def load_change_log(max_events=60, max_items=800):
+    """读回变更日志，按"第几次抓取发现的"分组，最新在前。"""
+    if not os.path.exists(CHANGES):
+        return []
+    with open(CHANGES, newline="") as f:
+        rows = list(csv.DictReader(f))
+    by_slot = {}
+    for r in rows:
+        g = by_slot.setdefault(r["to_slot"],
+                               {"at": r["noticed_at"], "from": r["from_slot"], "items": {}})
+        key = (r["resource_id"], r["target_date"])
+        it = g["items"].setdefault(key, {"rid": r["resource_id"],
+                                         "date": r["target_date"], "booked": [], "freed": []})
+        it[r["kind"]].append([r["start"], r["end"]])
+    out, used = [], 0
+    for slot in sorted(by_slot, reverse=True)[:max_events]:
+        g = by_slot[slot]
+        items = sorted(g["items"].values(), key=lambda x: (x["date"], x["rid"]))
+        if used + len(items) > max_items and out:
+            break
+        used += len(items)
+        ts = g["at"]
+        out.append({"at": ts[5:16].replace("T", " ") if len(ts) >= 16 else nice(slot),
+                    "from": nice(g["from"]), "to": nice(slot), "items": items})
+    return out
+
+
 def build_view(snaps):
     today = today_local()
     latest = snaps[-1]
@@ -239,22 +336,6 @@ def build_view(snaps):
                 if d["status"] == 0:
                     last_visible.setdefault(rid, {})[tdate] = {
                         "snap": s["snapshot_date"], "free": d["free"]}
-
-    changes = []
-    if prev:
-        for rid, rdata in latest["resources"].items():
-            pdays = prev["resources"].get(rid, {}).get("days", {})
-            for tdate, d in sorted(rdata["days"].items()):
-                if tdate < today.isoformat() or d["status"] != 0:
-                    continue
-                p = pdays.get(tdate)
-                if not p or p["status"] != 0:
-                    continue
-                now_m, was_m = free_minutes(d["free"]), free_minutes(p["free"])
-                booked, freed = merge(was_m - now_m), merge(now_m - was_m)
-                if booked or freed:
-                    changes.append({"rid": rid, "date": tdate,
-                                    "booked": booked, "freed": freed})
 
     return {
         "generated": latest["snapshot_at"],
@@ -272,7 +353,8 @@ def build_view(snaps):
         "resources": [{"id": str(r), "name": n} for r, n in RESOURCES],
         "latest": {rid: rd["days"] for rid, rd in latest["resources"].items()},
         "lastVisible": last_visible,
-        "changes": changes,
+        "changeLog": load_change_log(),
+        "changeTotal": sum(1 for _ in open(CHANGES)) - 1 if os.path.exists(CHANGES) else 0,
     }
 
 
@@ -288,6 +370,7 @@ def run_once(slot=None):
     save_snapshot(snap)
     snaps = load_snapshots()
     write_history(snaps)
+    update_changes(snaps)
     build_html(build_view(snaps))
     return snaps
 
